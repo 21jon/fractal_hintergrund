@@ -1,0 +1,167 @@
+#![allow(unused)]
+#[macro_use]
+use image;
+use image::ImageFormat;
+use num::complex::Complex;
+use std::fs;
+use std::thread;
+
+//Mandelbrot set
+
+//create a julia set of mandelbrot set
+fn julia_set(x: f64, y: f64, c: (f64, f64)) -> u8 {
+    let mut z = Complex::new(x, y);
+    let c = Complex::new(c.0, c.1);
+    let mut i = 0;
+    while i < 255 && z.norm() < 2.0 {
+        z = z * z + c;
+        i += 1;
+    }
+    i as u8
+}
+
+//generate a picture of mandelbrot set x * y
+
+fn pic_gen(x: u32, y: u32, seed: (f64, f64)) -> image::RgbImage {
+    let mut pic = image::ImageBuffer::new(x, y);
+
+    for (x_i, y_i, pixel) in pic.enumerate_pixels_mut() {
+        let i = julia_set(
+            (x_i as f64 - x as f64 / 2.0) / (x as f64 / 2.0) as f64,
+            (y_i as f64 - y as f64 / 2.0) / (y as f64 / 2.0) as f64,
+            seed,
+        );
+
+        *pixel = cool_pixel_stuff_pointythingi((x, y), (x_i, y_i), i);
+        //*pixel = cool_pixel_stuff(i);
+    }
+
+    pic
+}
+
+fn cool_pixel_stuff_pointythingi(img: (u32, u32), point: (u32, u32), in_erg: u8) -> image::Rgb<u8> {
+    if (in_erg == 255 || in_erg == 0) {
+        return image::Rgb([0, 0, 0]);
+    } else {
+        let point_mid = (img.0 as f64 / 2.0, img.1 as f64 / 2.0);
+
+        let dist = ((point_mid.0 - point.0 as f64).powi(2)
+            + (point_mid.1 - point.1 as f64).powi(2))
+        .sqrt();
+
+        let dist_max = ((point_mid.0).powi(2) + (point_mid.1).powi(2)).sqrt();
+
+        let dist_rel = dist / dist_max;
+
+        let dist_rel = 1.0 - dist_rel;
+
+        //println!("{},{},{},{}", dist_rel, dist, dist_max, in_erg);
+
+        let g = (dist_rel * in_erg as f64) as u8;
+
+        let blue: u8 = ((255.0 * dist_rel) - (255 - g) as f64) as u8;
+
+        return image::Rgb([0, g, blue]);
+    }
+}
+
+fn cool_pixel_stuff(g: u8) -> image::Rgb<u8> {
+    let b = if g > 127 {
+        ((255 - g) as f64 / 0.5) as u8
+    } else {
+        (g as f64 / 0.5) as u8
+    };
+    let g_o = if g > 10 { 0 } else { g };
+
+    image::Rgb([0, b, g_o])
+}
+
+fn save_pic(pic: image::RgbImage, name: &str) {
+    pic.save_with_format(name, ImageFormat::Png).unwrap()
+}
+
+//create a picture of julia set 1920x1080
+
+fn do_some(seed: (f64, f64), x: u32, y: u32, z: String) {
+    let pict = pic_gen(x, y, seed);
+
+    pict.save_with_format(format!("./out/{}.png", z).as_str(), ImageFormat::Png)
+        .unwrap()
+}
+
+fn gen_many(x: u32, y: u32) {
+    let mut handels = Vec::new();
+
+    for i in -100..100 {
+        for j in -100..100 {
+            let handle = thread::spawn(move || {
+                do_some(
+                    (i as f64 / 100.0, j as f64 / 100.0),
+                    x,
+                    y,
+                    format!("{}_{}", i, j),
+                );
+            });
+
+            handels.push(handle);
+        }
+    }
+
+    for handle in handels {
+        handle.join();
+    }
+}
+
+//get all the files in the folder ui and get the two numbers in the  name
+fn handel_files() {
+    let mut handels = Vec::new();
+
+    let paths = fs::read_dir("./ui").unwrap();
+
+    for path in paths {
+        let path = path.unwrap().path();
+        let path = path.to_str().unwrap();
+
+        let path = path.split("_").collect::<Vec<&str>>();
+
+        let x = path[1];
+        let y = path[2].split(".").collect::<Vec<&str>>()[0];
+        // .parse::<i32>()
+        //   .unwrap();
+        let x = x.parse::<i32>().unwrap();
+        let y = y.parse::<i32>().unwrap();
+        let x = x as f64 / 100.0;
+        let y = y as f64 / 100.0;
+
+        handels.push(thread::spawn(move || {
+            do_some(
+                (x, y),
+                7680,
+                4320,
+                format!("{}_{}", (x * 100.0) as i32, (y * 100.0) as i32).to_string(),
+            );
+        }));
+
+        if handels.len() > 10 {
+            for handle in handels {
+                handle.join();
+            }
+            handels = Vec::new();
+        }
+    }
+
+    for handle in handels {
+        handle.join();
+    }
+}
+
+fn main() {
+    //do_some(-0.53, 7680, 4320, rand::random::<i32>());
+
+    //do_some(-0.51, 1920, 1080, 999);
+    //gen_many(426, 240)
+
+    handel_files();
+}
+
+//let pict = pic_gen(4096, 2304);
